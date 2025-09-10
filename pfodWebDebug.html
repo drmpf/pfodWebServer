@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<!--
+   pfodWebDebug.html
+ * (c)2025 Forward Computing and Control Pty. Ltd.
+ * NSW Australia, www.forward.com.au
+ * This code is not warranted to be fit for any purpose. You may only use it at your own risk.
+ * This generated code may be freely used for both private and commercial use
+ * provided this copyright is maintained.
+-->
+
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pfodWeb</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background-color: white;
+        }
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+        #white-border {
+            background-color: white;
+            border-radius: 20px;
+            padding: 3px;
+            border-width: 2px;
+        }
+        #black-border {
+            background-color: black;
+            border-radius: 18px;
+            padding: 3px;
+            border-width: 2px;
+        }
+        #border-inner {
+            background-color: white;
+            border-radius: 16px;
+            padding: 5px;
+            border-width: 3px;
+        }
+        canvas {
+            background-color: #0000ff;
+            display: block;
+            padding: 0px;
+        }
+        #message-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.9);
+            z-index: 1000;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+        #message-overlay h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        #message-overlay p {
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: #666;
+            max-width: 600px;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container">
+        <div id="white-border">
+            <div id="black-border">
+              <div id="border-inner">
+                <canvas id="drawing-canvas" width="300" height="100"></canvas>
+            </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('drawing-canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = 'white';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Loading files ...', canvas.width / 2, canvas.height / 2);
+    </script>
+
+    <div id="message-overlay">
+        <h1 id="message-title"></h1>
+        <p id="message-text"></p>
+    </div>
+
+    <!-- Load version first, then main application script which will load its dependencies -->
+    <script src="./version.js"></script>
+    <script src="./pfodWebDebug.js"></script>
+</body>
+</html>

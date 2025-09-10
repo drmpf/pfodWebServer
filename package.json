@@ -1,0 +1,21 @@
+{
+  "name": "pfodWebServer",
+  "version": "1.0.1",
+  "description": "Server for pfodWeb data directory files",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
+  },
+  "keywords": [
+    "pfodweb",
+    "server",
+    "testing"
+  ],
+  "author": "Forward Computing and Control Pty. Ltd.",
+  "license": "see file headers"
+}
