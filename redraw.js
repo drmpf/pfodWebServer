@@ -147,53 +147,536 @@ function convertColorToHex(color, backgroundColorNumber = null) {
 }
 
 class Redraw {
-    constructor() {
+    constructor(canvas, ctx, initialDimensions = null) {
         // Instance variables for multi-viewer isolation
-        this.canvas = null;
-        this.ctx = null;
-        this.drawingManagerState = null;
-        
+        this.canvas = canvas;
+        this.ctx = ctx;
+
+        // Local drawing manager for redraw operations
+        this.redrawDrawingManager = new window.DrawingManager();
+
+        // Original data holder - stores pristine copy for restoration
+        this.originalDataManager = new window.DrawingManager();
+
         // Drawing state
         this.currentBackgroundColor = 0; // Store current drawing background color for Black/White mode
-        
+
         // Canvas caching for optimization
         this.cachedCanvasWidth = 0;
         this.cachedCanvasHeight = 0;
         this.hasCompletedFirstDraw = false;
+
+        // Track last dimensions for resize optimization
+        // Initialize from loaded dimensions if provided
+        if (initialDimensions) {
+            this.lastLogicalWidth = initialDimensions.logicalWidth;
+            this.lastLogicalHeight = initialDimensions.logicalHeight;
+            this.lastWindowWidth = initialDimensions.windowWidth;
+            this.lastWindowHeight = initialDimensions.windowHeight;
+            console.log(`[REDRAW] Initialized with dimensions: logical=${this.lastLogicalWidth}x${this.lastLogicalHeight}, window=${this.lastWindowWidth}x${this.lastWindowHeight}`);
+        } else {
+            this.lastLogicalWidth = null;
+            this.lastLogicalHeight = null;
+            this.lastWindowWidth = null;
+            this.lastWindowHeight = null;
+        }
     }
 
-    // Initialize with canvas and drawing manager state
-    init(config) {
-        if (config.canvas) this.canvas = config.canvas;
-        if (config.ctx) this.ctx = config.ctx;
-        if (config.drawingManagerState) this.drawingManagerState = config.drawingManagerState;
-        
-        console.log(`[REDRAW] Module initialized with canvas ${this.canvas.width}x${this.canvas.height}`);
-    }
+    // Redraw uses its own local data - no external configuration needed
 
-    // Update drawing manager state
-    updateState(config) {
-        if (config.drawings) this.drawingManagerState.drawings = config.drawings;
-        if (config.drawingsData) this.drawingManagerState.drawingsData = config.drawingsData;
-        if (config.allDrawingsReceived !== undefined) this.drawingManagerState.allDrawingsReceived = config.allDrawingsReceived; // this is not actually used!!
-        if (config.drawingResponseStatus) this.drawingManagerState.drawingResponseStatus = config.drawingResponseStatus;
+        // Get global display transform for merged canvas
+    getGlobalTransform() {
+        return this.redrawDrawingManager.globalTransform || { x: 0, y: 0, scale: 1.0 };
     }
 
     // Helper methods to access drawing manager state
+    // Helper methods to access drawing manager data
+    /**
+    getUnindexedItems(drawingName) {
+        return this.redrawDrawingManager.unindexedItems[drawingName] || [];
+    }
 
+    getIndexedItems(drawingName) {
+        return this.redrawDrawingManager.indexedItems[drawingName] || {};
+    }
+    getTouchZonesByCmd(drawingName) {
+        return this.redrawDrawingManager.touchZonesByCmd[drawingName] || {};
+    }
+    
+    getTouchActionsByCmd(drawingName) {
+        return this.redrawDrawingManager.touchActionsByCmd[drawingName] || {};
+    }
+
+    getDrawingResponseStatus(drawingName) {
+        return this.redrawDrawingManager.drawingResponseStatus[drawingName] || false;
+    }
+
+    getCurrentTransform(drawingName) {
+        return this.redrawDrawingManager.getCurrentTransform(drawingName);
+    }
+
+    getCurrentDrawingName() {
+        return this.redrawDrawingManager.drawings.length > 0 ? this.redrawDrawingManager.drawings[0] : '';
+    }
+
+    // Get all touch zones by cmd - this replaces global touchZonesByCmd access
+    getAllTouchZonesByCmd() {
+        return this.redrawDrawingManager.allTouchZonesByCmd || {};
+    }
+
+    // Get merged touchActions for mouse operations
+    getAllTouchActionsByCmd() {
+        return this.redrawDrawingManager.allTouchActionsByCmd || {};
+    }
+
+    // Get merged touchActionInputs for mouse operations 
+    getAllTouchActionInputsByCmd() {
+        return this.redrawDrawingManager.allTouchActionInputsByCmd || {};
+    }
+
+
+    // Set global display transform for merged canvas
+    setGlobalTransform(transform) {
+        this.redrawDrawingManager.globalTransform = { ...transform };
+    }
+
+    // Get merged unindexed items for mouse operations
+    getAllUnindexedItems() {
+        return this.redrawDrawingManager.allUnindexedItems || [];
+    }
+
+    // Get merged indexed items for mouse operations
+    getAllIndexedItemsByNumber() {
+        return this.redrawDrawingManager.allIndexedItemsByNumber || {};
+    }
+**/
 
 
         // This would need to be implemented based on how transforms are stored
 
     getCurrentDrawingName() {
-        return this.drawingManagerState.drawings.length > 0 ? this.drawingManagerState.drawings[0] : '';
+        return this.redrawDrawingManager.drawings.length > 0 ? this.redrawDrawingManager.drawings[0] : '';
     }
 
-    // Public interface for drawing operations
-    redrawCanvas(currentDrawingData, allUnindexedItems, allIndexedItemsByNumber, allTouchZonesByCmd) {
-        return this.redrawCanvasImpl(currentDrawingData, allUnindexedItems, allIndexedItemsByNumber, allTouchZonesByCmd);
+    // Copy ALL data TO shadow drawing manager for processing (moved from mergeAndRedraw.js)
+    copyToShadow(shadowDrawingManager) {
+        if (shadowDrawingManager && this.redrawDrawingManager) {
+            // Set inUse flag before copying
+            shadowDrawingManager.inUse = true;
+            // Deep copy ALL collections and properties
+            shadowDrawingManager.touchZonesByCmd = JSON.parse(JSON.stringify(this.redrawDrawingManager.touchZonesByCmd || {}));
+            shadowDrawingManager.touchActionsByCmd = JSON.parse(JSON.stringify(this.redrawDrawingManager.touchActionsByCmd || {}));
+            shadowDrawingManager.touchActionInputsByCmd = JSON.parse(JSON.stringify(this.redrawDrawingManager.touchActionInputsByCmd || {}));
+            shadowDrawingManager.allTouchActionsByCmd = JSON.parse(JSON.stringify(this.redrawDrawingManager.allTouchActionsByCmd || {}));
+            shadowDrawingManager.allTouchActionInputsByCmd = JSON.parse(JSON.stringify(this.redrawDrawingManager.allTouchActionInputsByCmd || {}));
+            shadowDrawingManager.allTouchZonesByCmd = JSON.parse(JSON.stringify(this.redrawDrawingManager.allTouchZonesByCmd || {}));
+            shadowDrawingManager.allUnindexedItems = JSON.parse(JSON.stringify(this.redrawDrawingManager.allUnindexedItems || []));
+            shadowDrawingManager.allIndexedItemsByNumber = JSON.parse(JSON.stringify(this.redrawDrawingManager.allIndexedItemsByNumber || {}));
+            shadowDrawingManager.unindexedItems = JSON.parse(JSON.stringify(this.redrawDrawingManager.unindexedItems || {}));
+            shadowDrawingManager.indexedItems = JSON.parse(JSON.stringify(this.redrawDrawingManager.indexedItems || {}));
+            shadowDrawingManager.drawings = JSON.parse(JSON.stringify(this.redrawDrawingManager.drawings || []));
+            shadowDrawingManager.drawingsData = JSON.parse(JSON.stringify(this.redrawDrawingManager.drawingsData || {}));
+            shadowDrawingManager.savedTransforms = JSON.parse(JSON.stringify(this.redrawDrawingManager.savedTransforms || {}));
+            shadowDrawingManager.drawingResponseStatus = JSON.parse(JSON.stringify(this.redrawDrawingManager.drawingResponseStatus || {}));
+
+            // Copy scalar properties
+            shadowDrawingManager.currentDrawingName = this.redrawDrawingManager.currentDrawingName;
+            shadowDrawingManager.allDrawingsReceived = this.redrawDrawingManager.allDrawingsReceived;
+            shadowDrawingManager.globalTransform = JSON.parse(JSON.stringify(this.getGlobalTransform()));
+
+            console.log(`[REDRAW] Copied ALL data TO shadow`);
+        }
     }
 
+    // Update redraw drawing manager FROM processed shadow (moved from mergeAndRedraw.js)
+    updateFromShadow(shadowDrawingManager) {
+        if (shadowDrawingManager.inUse) {
+            // Save current state to original data holder before updating
+//            this.saveToOriginalData();
+
+            // Deep copy ALL processed shadow data to redraw drawing manager
+            this.redrawDrawingManager.touchZonesByCmd = JSON.parse(JSON.stringify(shadowDrawingManager.touchZonesByCmd || {}));
+            this.redrawDrawingManager.touchActionsByCmd = JSON.parse(JSON.stringify(shadowDrawingManager.touchActionsByCmd || {}));
+            this.redrawDrawingManager.touchActionInputsByCmd = JSON.parse(JSON.stringify(shadowDrawingManager.touchActionInputsByCmd || {}));
+            this.redrawDrawingManager.allTouchActionsByCmd = JSON.parse(JSON.stringify(shadowDrawingManager.allTouchActionsByCmd || {}));
+            this.redrawDrawingManager.allTouchActionInputsByCmd = JSON.parse(JSON.stringify(shadowDrawingManager.allTouchActionInputsByCmd || {}));
+            this.redrawDrawingManager.allTouchZonesByCmd = JSON.parse(JSON.stringify(shadowDrawingManager.allTouchZonesByCmd || {}));
+            this.redrawDrawingManager.allUnindexedItems = JSON.parse(JSON.stringify(shadowDrawingManager.allUnindexedItems || []));
+            this.redrawDrawingManager.allIndexedItemsByNumber = JSON.parse(JSON.stringify(shadowDrawingManager.allIndexedItemsByNumber || {}));
+            this.redrawDrawingManager.unindexedItems = JSON.parse(JSON.stringify(shadowDrawingManager.unindexedItems || {}));
+            this.redrawDrawingManager.indexedItems = JSON.parse(JSON.stringify(shadowDrawingManager.indexedItems || {}));
+            this.redrawDrawingManager.drawings = JSON.parse(JSON.stringify(shadowDrawingManager.drawings || []));
+            this.redrawDrawingManager.drawingsData = JSON.parse(JSON.stringify(shadowDrawingManager.drawingsData || {}));
+            this.redrawDrawingManager.savedTransforms = JSON.parse(JSON.stringify(shadowDrawingManager.savedTransforms || {}));
+            this.redrawDrawingManager.drawingResponseStatus = JSON.parse(JSON.stringify(shadowDrawingManager.drawingResponseStatus || {}));
+
+            // Copy scalar properties
+            this.redrawDrawingManager.currentDrawingName = shadowDrawingManager.currentDrawingName;
+            this.redrawDrawingManager.allDrawingsReceived = shadowDrawingManager.allDrawingsReceived;
+            this.redrawDrawingManager.globalTransform = JSON.parse(JSON.stringify(shadowDrawingManager.globalTransform));
+
+            // Trigger redraw with updated data
+            this.performRedraw();
+
+            // Clear the inUse flag to indicate shadow processing is complete
+            shadowDrawingManager.inUse = false;
+
+            console.log(`[REDRAW] Updated FROM processed shadow and redrawn`);
+        }
+    }
+
+    // Save current data to original data holder (reuses copyToShadow)
+//    saveToOriginalData() {
+//        this.copyToShadow(this.originalDataManager);
+//    }
+
+    // Restore data from original data holder (reuses updateFromShadow)
+//    restoreFromOriginalData() {
+//        this.updateFromShadow(this.originalDataManager);
+//    }
+
+    // Create backup of current redraw data for touchAction restoration
+    makeBackup() {
+        console.log(`[TOUCH_ACTION] Starting backup creation, this.redrawDrawingManager exists: ${!!this.redrawDrawingManager}`);
+
+        if (!this.redrawDrawingManager) {
+            console.error(`[TOUCH_ACTION] this.redrawDrawingManager is undefined - cannot create backup!`);
+            return null;
+        }
+
+        const transformBackup = JSON.parse(JSON.stringify(this.getGlobalTransform()));
+        console.log(`[TOUCH_ACTION] Got transformBackup`);
+
+        // Backup merged collections that will be restored
+        const allTouchZonesByCmdBackup = JSON.parse(JSON.stringify(this.redrawDrawingManager.allTouchZonesByCmd));
+        console.log(`[TOUCH_ACTION] Got allTouchZonesBackup`);
+        const allUnindexedItemsBackup = JSON.parse(JSON.stringify(this.redrawDrawingManager.allUnindexedItems));
+        console.log(`[TOUCH_ACTION] Got allUnindexedItemsBackup`);
+        const allIndexedItemsByNumberBackup = JSON.parse(JSON.stringify(this.redrawDrawingManager.allIndexedItemsByNumber));
+        console.log(`[TOUCH_ACTION] Got allIndexedItemsByNumberBackup`);
+        const allTouchActionsByCmdBackup = JSON.parse(JSON.stringify(this.redrawDrawingManager.allTouchActionsByCmd));
+        console.log(`[TOUCH_ACTION] Got touchActionsBackup`);
+        const allTouchActionInputsByCmdBackup = JSON.parse(JSON.stringify(this.redrawDrawingManager.allTouchActionInputsByCmd));
+        console.log(`[TOUCH_ACTION] Got touchActionInputsBackup`);
+
+        const currentDrawingNameBackup = this.getCurrentDrawingName();
+        console.log(`[TOUCH_ACTION] Got currentDrawingNameBackup: ${currentDrawingNameBackup}`);
+
+        console.warn(`[TOUCH_ACTION] Creating INITIAL backup: ${Object.keys(allTouchZonesByCmdBackup).length} merged touchZones, ${allUnindexedItemsBackup.length} merged unindexed items, ${Object.keys(allIndexedItemsByNumberBackup).length} merged indexed items, ${Object.keys(allTouchActionsByCmdBackup).length} touchActions, ${Object.keys(allTouchActionInputsByCmdBackup).length} touchActionInputs, transform (${transformBackup.x}, ${transformBackup.y}, ${transformBackup.scale}), currentDrawing: ${currentDrawingNameBackup}`);
+
+        // Return the backup object
+        return {
+            transform: transformBackup,
+            currentDrawingName: currentDrawingNameBackup,
+            allTouchZonesByCmd: allTouchZonesByCmdBackup,
+            allUnindexedItems: allUnindexedItemsBackup,
+            allIndexedItemsByNumber: allIndexedItemsByNumberBackup,
+            allTouchActionsByCmd: allTouchActionsByCmdBackup,
+            allTouchActionInputsByCmd: allTouchActionInputsByCmdBackup
+        };
+    }
+
+
+    // Public interface for touch action redraws with pseudo response merging
+    redrawForTouchAction(pseudoResponse) {
+        console.log(`[REDRAW] TouchAction redraw - processing pseudo response and merging`);
+        console.log(`[REDRAW] TouchAction merging pseudo response with ${pseudoResponse.items?.length || 0} items`);
+
+        // Process the pseudo response directly on current redrawDrawingManager
+        if (window.drawingViewer && window.drawingViewer.drawingDataProcessor) {
+            window.drawingViewer.drawingDataProcessor.processDrawingData(pseudoResponse, this.redrawDrawingManager, null, 'touchAction');
+        }
+
+        // Use DrawingMerger to merge all drawings including the pseudo updates
+        const drawingMerger = new window.DrawingMerger(this.redrawDrawingManager);
+        drawingMerger.mergeAllDrawings();
+
+        // Trigger redraw with updated data
+        this.performRedraw();
+    }
+
+    // Public interface for normal redraws
+//    redrawForNormal() {
+//        console.log(`[REDRAW] Normal redraw - restoring original data`);
+
+//        // Restore original data before redrawing
+//        this.restoreFromOriginalData();
+//    }
+
+    // Direct redraw with working copy - used by touchActions to avoid extra processing
+    redrawWithWorkingCopy(workingCopy) {
+        console.log(`[REDRAW] Direct redraw with working copy - avoiding extra processing`);
+        console.log(`[REDRAW] Working copy data: unindexed=${workingCopy.allUnindexedItems.length}, indexed=${Object.keys(workingCopy.allIndexedItemsByNumber).length}, touchZones=${Object.keys(workingCopy.allTouchZonesByCmd).length}`);
+
+        // Get background color from current drawing data
+        const mainDrawingName = this.getCurrentDrawingName();
+        const mainDrawingData = mainDrawingName ? this.redrawDrawingManager.drawingsData[mainDrawingName] : null;
+        const backgroundColor = mainDrawingData?.data?.color || 0;
+        console.log(`[REDRAW] Using background color: ${backgroundColor} for drawing: ${mainDrawingName}`);
+
+        // Call direct redraw implementation
+        console.log(`[REDRAW] Calling redrawCanvasImpl with working copy data`);
+        this.redrawCanvasImpl(workingCopy.allUnindexedItems, workingCopy.allIndexedItemsByNumber, workingCopy.allTouchZonesByCmd, backgroundColor);
+        console.log(`[REDRAW] redrawCanvasImpl completed`);
+    }
+
+    performRedraw() {
+        // Get main drawing name and background color
+        const mainDrawingName = this.redrawDrawingManager.drawings.length > 0 ? this.redrawDrawingManager.drawings[0] : '';
+        const mainDrawingData = mainDrawingName ? this.redrawDrawingManager.drawingsData[mainDrawingName] : null;
+
+        console.log(`[REDRAW] performRedraw - mainDrawingName: ${mainDrawingName}`);
+        console.log(`[REDRAW] performRedraw - mainDrawingData:`, mainDrawingData);
+        console.log(`[REDRAW] performRedraw - drawingsData keys:`, Object.keys(this.redrawDrawingManager.drawingsData || {}));
+
+        const backgroundColor = mainDrawingData?.data?.color || 0;
+        console.log(`[REDRAW] performRedraw - backgroundColor: ${backgroundColor}`);
+
+        this.redrawCanvasImpl(this.redrawDrawingManager.allUnindexedItems,
+            this.redrawDrawingManager.allIndexedItemsByNumber, this.redrawDrawingManager.allTouchZonesByCmd, backgroundColor);
+    }
+
+
+        // Public interface for canvas redraw
+    redrawCanvas(allUnindexedItems,allIndexedItemsByNumber,allTouchZonesByCmd,isTouchAction = false) {
+      // Add stack trace for non-touchAction redraws to identify what's calling them
+   //   if (!isTouchAction) {
+   //     console.log(`[MERGE_REDRAW] Non-touchAction redraw called. Stack trace:`, new Error().stack);
+   //   }
+      
+      // Only check processing state if this is NOT a touchAction
+      if (!isTouchAction) {
+        // Use atomic function calls for real-time state instead of stale snapshots
+        const isProcessing = this.drawingViewer ? this.drawingViewer.isProcessingQueue() : false;
+        const queueLength = this.drawingViewer ? this.drawingViewer.requestQueue.length : 0;
+        const sentRequest = this.drawingViewer ? this.drawingViewer.sentRequest : null;
+        
+        // Check if mouse is down - prevent full redraws during drag operations
+        // Access mouse state through the drawingViewer which has direct access
+        const isMouseDown = this.drawingViewer && this.drawingViewer.touchState && this.drawingViewer.touchState.isDown;
+        console.log(`[MERGE_REDRAW] DEBUG Redraw check - processing: ${isProcessing}, queue: ${queueLength}, sentRequest: ${sentRequest?.drawingName || 'none'}, mouseDown: ${isMouseDown}, drawingViewer exists: ${!!this.drawingViewer}, touchState exists: ${!!(this.drawingViewer && this.drawingViewer.touchState)}`);
+        
+        if (queueLength > 0 || sentRequest) {// || isProcessing || isMouseDown) { // removed V1.1.3
+          console.log(`[MERGE_REDRAW] Skipping redraw - processing: ${isProcessing}, queue length: ${queueLength}, sentRequest: ${sentRequest?.drawingName || 'none'}, mouseDown: ${isMouseDown}`);
+           return;
+        }
+      }
+        // Use DrawingManager state to get the current drawing data
+        const mainDrawingName = this.redrawDrawingManager.drawings.length > 0 ? this.redrawDrawingManager.drawings[0] : '';
+
+        const currentDrawingData = this.redrawDrawingManager.drawingsData[mainDrawingName];
+        if (!currentDrawingData) return;
+        
+        console.log(`[MERGE_REDRAW] Starting redraw for canvas: ${mainDrawingName}, size=${this.canvas.width}x${this.canvas.height} at ${new Date().toISOString()}`);
+        
+        // For touchAction redraws, skip merge and use existing state
+        if (isTouchAction) {
+          console.log(`[MERGE_REDRAW] TouchAction redraw - using existing state, skipping merge operation`);
+          console.log(`[TOUCHACTION_REDRAW_DEBUG] TouchAction redraw inputs - unindexed: ${allUnindexedItems.length}, indexed keys: [${Object.keys(allIndexedItemsByNumber).join(', ')}], touchZones: [${Object.keys(allTouchZonesByCmd).join(', ')}]`);
+          console.log(`[TOUCHACTION_REDRAW_DEBUG] currentDrawingData.name: ${currentDrawingData?.name}`);
+          return this.redrawCanvasImpl(allUnindexedItems, allIndexedItemsByNumber, allTouchZonesByCmd, currentDrawingData.color);
+        }
+                
+        // We'll rebuild these collections during the redraw (only for normal redraws)
+        this.redrawDrawingManager.allUnindexedItems = [];
+        this.redrawDrawingManager.allIndexedItemsByNumber = {}; // Key: numeric index, Value: array of items with that index
+
+        // Mark processed drawings to avoid infinite loops
+        let processedDrawings = new Set();
+
+        console.log(`[MERGE_REDRAW] Starting to merge drawing items with unindexed and indexed items from DrawingManager`);
+        
+        // Clear old touchZones from previous drawing - moved here before merge operation
+        this.redrawDrawingManager.allTouchZonesByCmd = {};
+        
+        // Set up initial transform state for the main drawing
+        const initialTransform = {
+            x: 0,
+            y: 0,
+            scale: 1.0
+        };
+        
+        // Create the main clip region (full canvas logical size)
+        const logicalCanvasWidth = currentDrawingData.data ? currentDrawingData.data.x || 50 : 50;
+        const logicalCanvasHeight = currentDrawingData.data ? currentDrawingData.data.y || 50 : 50;
+        const mainClipRegion = {
+            x: 0,
+            y: 0,
+            width: logicalCanvasWidth,
+            height: logicalCanvasHeight
+        };
+        console.log(`[MERGE_REDRAW] Created main clip region: (${mainClipRegion.x}, ${mainClipRegion.y}, ${mainClipRegion.width}, ${mainClipRegion.height})`);
+        
+        // Start by processing the main drawing  This will add a background rectangle
+        console.log(`[MERGE_REDRAW] Processing main drawing "${mainDrawingName}" with mergeDrawingItems`);
+        const mainDwg = {
+                type: 'insertDwg',
+                xOffset: 0,
+                yOffset: 0,
+                color: currentDrawingData.color,
+                parentDrawingName: mainDrawingName, // itself
+                drawingName: mainDrawingName,
+                transform: { x: 0, y: 0, scale: 1.0 }
+            };
+        this.mergeDrawingItems(mainDwg, this.redrawDrawingManager.allUnindexedItems, this.redrawDrawingManager.allIndexedItemsByNumber,this.redrawDrawingManager.allTouchZonesByCmd, processedDrawings, mainClipRegion);
+        
+        // Update the main drawing's backup arrays with merged items (with correct transforms)
+        // This ensures touchActions can find items with the correct transforms for pseudo items
+        if (mainDrawingName) {
+            // Update main drawing's indexed items with merged versions (correct transforms)
+            if (!this.redrawDrawingManager.indexedItems[mainDrawingName]) {
+                this.redrawDrawingManager.indexedItems[mainDrawingName] = {};
+            }
+            for (const idx in this.redrawDrawingManager.allIndexedItemsByNumber) {
+                const mergedItem = this.redrawDrawingManager.allIndexedItemsByNumber[idx];
+                this.redrawDrawingManager.indexedItems[mainDrawingName][idx] = {...mergedItem};
+                console.log(`[MERGE_REDRAW] Updated main drawing indexed item idx=${idx} with merged transform for touchAction backup`);
+            }
+            
+            // Update main drawing's touchZones with merged versions (correct transforms)  
+            if (!this.redrawDrawingManager.touchZonesByCmd[mainDrawingName]) {
+                this.redrawDrawingManager.touchZonesByCmd[mainDrawingName] = {};
+            }
+            for (const cmd in this.redrawDrawingManager.allTouchZonesByCmd) {
+                const mergedTouchZone = this.redrawDrawingManager.allTouchZonesByCmd[cmd];
+                this.redrawDrawingManager.touchZonesByCmd[mainDrawingName][cmd] = {...mergedTouchZone};
+                console.log(`[MERGE_REDRAW] Updated main drawing touchZone cmd="${cmd}" with merged transform for touchAction backup`);
+            }
+        }
+        
+        // Report the merged results
+        console.log(`[MERGE_REDRAW] After merging all drawings: ${this.redrawDrawingManager.allUnindexedItems.length} unindexed items, ${Object.keys(this.redrawDrawingManager.allIndexedItemsByNumber).length} different indices, ${Object.keys(this.redrawDrawingManager.allTouchZonesByCmd).length} touchZones`)
+        for (let i = 0; i < this.redrawDrawingManager.allUnindexedItems.length; i++) {
+            const item = this.redrawDrawingManager.allUnindexedItems[i];
+            console.log(`[MERGE_REDRAW] DEBUG: Unindexed item ${i}: type=${item.type}, drawingName=${item.drawingName || 'none'}, transform=(${item.transform?.x},${item.transform?.y}), scale=${item.transform?.scale}`);
+            console.log(`[MERGE_REDRAW] DEBUG: Unindexed item ${i}: `,JSON.stringify(item,null,2));
+        }
+        
+        // Only add items to draw if specifically needed for debugging
+        // We don't add test rectangles for empty drawings, as they should be allowed to be empty
+  //      if (this.redrawDrawingManager.allUnindexedItems.length === 0) {
+  //          console.log(`[MERGE_REDRAW] No items to draw. Canvas will remain empty.`);
+  //          // The test rectangle code has been removed intentionally to allow for empty canvases
+  //      }
+        
+        // Debug: print allIndexedItems ordered by index
+        const sortedIndexes = Object.keys(this.redrawDrawingManager.allIndexedItemsByNumber).map(Number).sort((a, b) => a - b);
+        if (sortedIndexes.length > 0) {
+            console.log(`[MERGE_REDRAW] allIndexedItems ordered by index:`);
+            sortedIndexes.forEach(index => {
+                const item = this.redrawDrawingManager.allIndexedItemsByNumber[index];
+                console.log(`  Index ${index}: Type: ${item.type || 'unknown'}, Drawing: ${item.drawingName || 'unknown'}`);
+               console.log(`[MERGE_REDRAW] DEBUG: Indexed item: `,JSON.stringify(item,null,2));
+            });
+        } else {
+            console.log(`[MERGE_REDRAW] No indexed items found.`);
+        }
+       
+        if (Object.keys(this.redrawDrawingManager.allTouchZonesByCmd).length > 0) {
+          for (const cmd in this.redrawDrawingManager.allTouchZonesByCmd) {
+            const touchZone = this.redrawDrawingManager.allTouchZonesByCmd[cmd];
+            console.log(`[MERGE_REDRAW] DEBUG: touchZone item: `,JSON.stringify(touchZone,null,2));
+          }
+        } else {
+           console.log(`[MERGE_REDRAW] No touchZone items found.`);
+        }
+
+        // Now call redraw to handle the actual drawing
+        return this.redrawCanvasImpl(this.redrawDrawingManager.allUnindexedItems, this.redrawDrawingManager.allIndexedItemsByNumber, this.redrawDrawingManager.allTouchZonesByCmd, currentDrawingData.color);
+    }
+
+    // Resize canvas to fit the container
+    resizeCanvas(touchState) {
+        // Get drawing data from local redraw drawing manager
+        const mainDrawingName = this.redrawDrawingManager.drawings.length > 0 ? this.redrawDrawingManager.drawings[0] : '';
+        const logicalDrawingData = mainDrawingName ? this.redrawDrawingManager.drawingsData[mainDrawingName] : null;
+
+        console.log(`[RESIZE_DEBUG] resizeCanvas() called for drawing: "${mainDrawingName}"`);
+        console.log(`[RESIZE_DEBUG] URL: ${window.location.href}`);
+
+        if (!logicalDrawingData || !logicalDrawingData.data) {
+            console.warn('No drawing data available for resizing');
+            return;
+        }
+
+        // Check if mouse is down - skip resize operations during drag
+        const isMouseDown = touchState && touchState.isDown;
+
+        if (isMouseDown) {
+            this.redrawForTouchAction();
+            return;
+        }
+
+        // Get the logical canvas dimensions (1-255 range)
+        const logicalWidth = Math.min(Math.max(logicalDrawingData.data.x, 1), 255);
+        const logicalHeight = Math.min(Math.max(logicalDrawingData.data.y, 1), 255);
+
+        // Get window dimensions to check if they've changed too
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+
+        console.log(`[RESIZE_DEBUG] Current dimensions: logical=${logicalWidth}x${logicalHeight}, window=${windowWidth}x${windowHeight}`);
+        console.log(`[RESIZE_DEBUG] Previous dimensions: logical=${this.lastLogicalWidth}x${this.lastLogicalHeight}, window=${this.lastWindowWidth}x${this.lastWindowHeight}`);
+        console.log(`[RESIZE_DEBUG] Drawing data x=${logicalDrawingData.data.x}, y=${logicalDrawingData.data.y}`);
+
+        // Calculate what the canvas size should be based on logical dimensions
+        const aspectRatio = logicalWidth / logicalHeight;
+        let displayHeight = windowHeight;
+        let displayWidth = displayHeight * aspectRatio;
+
+        // If width exceeds screen, scale down to fit width
+        if (displayWidth > windowWidth) {
+            displayWidth = windowWidth;
+            displayHeight = displayWidth / aspectRatio;
+        }
+
+        // Account for borders and margin
+        displayWidth -= 26;
+        displayHeight -= 26;
+
+        // Calculate expected canvas size
+        const expectedCanvasWidth = Math.floor(displayWidth);
+        const expectedCanvasHeight = Math.floor(displayHeight);
+
+        // Check if dimensions haven't changed
+        if ((this.lastLogicalWidth === logicalWidth &&
+            this.lastLogicalHeight === logicalHeight &&
+            this.lastWindowWidth === windowWidth &&
+            this.lastWindowHeight === windowHeight &&
+            this.canvas.width === expectedCanvasWidth &&
+            this.canvas.height === expectedCanvasHeight) || isMouseDown) {
+
+            console.log(`[RESIZE] Skipping resize - dimensions unchanged`);
+            // Still update scale factors
+            this.canvas.scaleX = this.canvas.width / logicalWidth;
+            this.canvas.scaleY = this.canvas.height / logicalHeight;
+//            if (!isMouseDown) {
+//                this.redrawForNormal();
+//            }
+            return;
+        }
+
+        // Store current dimensions for future comparison
+        this.lastLogicalWidth = logicalWidth;
+        this.lastLogicalHeight = logicalHeight;
+        this.lastWindowWidth = windowWidth;
+        this.lastWindowHeight = windowHeight;
+
+        console.log(`[RESIZE] Proceeding with resize: logical=${logicalWidth}x${logicalHeight}, canvas=${expectedCanvasWidth}x${expectedCanvasHeight}`);
+
+        // Set canvas size
+        this.canvas.width = expectedCanvasWidth;
+        this.canvas.height = expectedCanvasHeight;
+        this.canvas.scaleX = expectedCanvasWidth / logicalWidth;
+        this.canvas.scaleY = expectedCanvasHeight / logicalHeight;
+
+        console.log(`Canvas physical size: ${this.canvas.width}x${this.canvas.height}`);
+        console.log(`Scale factors: X=${this.canvas.scaleX}, Y=${this.canvas.scaleY}`);
+
+        // Redraw with new size
+        console.log(`[RESIZE] redrawCanvas after resize`);
+//        this.redrawForNormal();
+    }
 
     // Get current state for debugging
     getState() {
@@ -205,10 +688,8 @@ class Redraw {
     }
 
     // Main canvas redraw implementation
-    redrawCanvasImpl(currentDrawingData, allUnindexedItems, allIndexedItemsByNumber, allTouchZonesByCmd) {
-        if (!currentDrawingData) return;
-        
-        console.log(`[REDRAW] Starting redraw for canvas: ${currentDrawingData.name}, size=${this.canvas.width}x${this.canvas.height} at ${new Date().toISOString()}`);
+    redrawCanvasImpl(allUnindexedItems, allIndexedItemsByNumber, allTouchZonesByCmd, backgroundColor = 0) {
+        console.log(`[REDRAW] Starting redraw for canvas, size=${this.canvas.width}x${this.canvas.height} at ${new Date().toISOString()}`);
         console.log(`[REDRAW_DEBUG] Redraw inputs - unindexed: ${allUnindexedItems.length}, indexed keys: [${Object.keys(allIndexedItemsByNumber).join(', ')}], touchZones: [${Object.keys(allTouchZonesByCmd).join(', ')}]`);
         
         // Check if canvas size has changed or this is the first draw
@@ -217,12 +698,12 @@ class Redraw {
         console.log(`[REDRAW] Proceeding with redraw, using passed drawing data and merged items`);
         
         // Clear canvas - use cached dimensions after first draw if size hasn't changed
-        const rawBackgroundColor = currentDrawingData.data ? currentDrawingData.data.color || 0 : 0; // Default to black (0)
+        const rawBackgroundColor = backgroundColor;
         this.currentBackgroundColor = rawBackgroundColor; // Store for Black/White color mode
-        const backgroundColor = convertColorToHex(rawBackgroundColor);
-        console.log(`[REDRAW] Setting canvas background color to: ${backgroundColor} (from raw: ${rawBackgroundColor})`);
-        this.ctx.fillStyle = backgroundColor;
-        this.ctx.strokeStyle = backgroundColor;
+        const backgroundColorHex = convertColorToHex(rawBackgroundColor);
+        console.log(`[REDRAW] Setting canvas background color to: ${backgroundColorHex} (from raw: ${rawBackgroundColor})`);
+        this.ctx.fillStyle = backgroundColorHex;
+        this.ctx.strokeStyle = backgroundColorHex;
         this.ctx.lineWidth = 2; 
         if (this.hasCompletedFirstDraw && !sizeChanged) {
             // Use cached dimensions if they exist and size hasn't changed
@@ -472,7 +953,7 @@ class Redraw {
         let drawingHeight = 50; // Default height
         let backgroundColor = 7; // Default light gray (silver) for missing drawings
         
-        const drawingData = this.drawingManagerState.drawingsData[item.drawingName];
+        const drawingData = this.redrawDrawingManager.drawingsData[item.drawingName];
         if (drawingData && drawingData.data) {
             // Use actual drawing data
             drawingWidth = drawingData.data.x || drawingWidth;

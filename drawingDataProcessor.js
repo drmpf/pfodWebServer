@@ -71,7 +71,7 @@ class DrawingDataProcessor {
     }
       
     // Main processing function for drawing data
-    processDrawingData(data, savedData, requestType = 'unknown') {
+    processDrawingData(data, drawingManager, savedData, requestType = 'unknown') {
         // Handle empty cmd responses (e.g., from touchZone requests)
         let cmd = data.cmd;
         if (cmd) {
@@ -97,16 +97,16 @@ class DrawingDataProcessor {
               if (result.drawingName.trim() !== '') {
                drawingName = result.drawingName; // update it
              } else {
-               drawingName = this.pfodWeb.drawingManager.currentDrawingName; // assume we are updating main dwg from menu
+               drawingName = drawingManager.currentDrawingName; // assume we are updating main dwg from menu
              }
              console.log(`[processDrawingData] Updated dwgName and currentDrawingName "${drawingName}"`);
 
-             this.pfodWeb.drawingManager.currentDrawingName = drawingName;
+             drawingManager.currentDrawingName = drawingName;
             // Update page title with drawing name
             // this.updatePageTitle(drawingName);
             // Add the drawing as the first drawing in the array if not already present
-            if (!this.pfodWeb.drawingManager.drawings.includes(drawingName)) {
-               this.pfodWeb.drawingManager.drawings.unshift(drawingName);
+            if (!drawingManager.drawings.includes(drawingName)) {
+               drawingManager.drawings.unshift(drawingName);
             }
             // request dwgName and return
          //   console.log(`[DRAWING_DATA] After tranlation::`, JSON.stringify(result, null, 2));
@@ -131,7 +131,7 @@ class DrawingDataProcessor {
             console.log(`[TOUCH_REPLACEMENT] Touch request returned start response for "${drawingName}"`);
             
             // Check if drawingName matches any current drawing (main or inserted)
-            const drawingIndex = this.pfodWeb.drawingManager.drawings.indexOf(drawingName);
+            const drawingIndex = drawingManager.drawings.indexOf(drawingName);
             
             if (drawingIndex >= 0) {
                 // Drawing found in current drawings - completely replace that specific drawing
@@ -142,7 +142,7 @@ class DrawingDataProcessor {
                 console.log(`[TOUCH_REPLACEMENT] "${drawingName}" not found in current drawings - completely starting fresh`);
                 
                 // Clear tracking for all current drawings
-                this.pfodWeb.drawingManager.drawings.forEach(dwgName => {
+                drawingManager.drawings.forEach(dwgName => {
                     this.pfodWeb.requestTracker.touchRequests.delete(dwgName);
                     this.pfodWeb.requestTracker.insertDwgRequests.delete(dwgName);
                     
@@ -154,14 +154,13 @@ class DrawingDataProcessor {
                 
                 // Create a completely new DrawingManager instance to ensure clean state
                 console.log(`[TOUCH_REPLACEMENT] Creating new DrawingManager instance`);
-                this.pfodWeb.drawingManager = new window.DrawingManager();
-                this.pfodWeb.drawingManager.initialize(drawingName);
+                drawingManager = new window.DrawingManager();
+                drawingManager.initialize(drawingName);
                 
                 // Update page title with new main drawing name
                 document.title = `pfodWeb ${drawingName}`;
                 
-                // Update MergeAndRedraw with the new clean DrawingManager
-                this.pfodWeb.mergeAndRedraw.updateState(this.pfodWeb.drawingManager.getMergeAndRedrawState());
+                // DrawingDataProcessor works on shadow data - redraw update handled by updateFromShadow()
                 
                 console.log(`[TOUCH_REPLACEMENT] Started completely fresh with main drawing "${drawingName}"`);
             }
@@ -209,21 +208,21 @@ class DrawingDataProcessor {
             };
             
             // Set the drawing data in the manager
-            this.pfodWeb.drawingManager.setDrawingData(drawingName, drawingData);
+            drawingManager.setDrawingData(drawingName, drawingData);
             
             console.log(`[REFRESH] Initialized drawing: ${data.name}, size=${x}x${y}, refresh=${drawingData.refresh}ms, version=${data.version}`);
             
             // For 'start' commands, we need to check for previously inserted drawings to remove
-            if (drawingName === (this.pfodWeb.drawingManager.drawings.length > 0 ? this.pfodWeb.drawingManager.drawings[0] : '') && this.pfodWeb.drawingManager.drawings.length > 1) {
+            if (drawingName === (drawingManager.drawings.length > 0 ? drawingManager.drawings[0] : '') && drawingManager.drawings.length > 1) {
                 console.log(`Start command received for ${data.name}, checking for drawings to remove`);
                 // Create a copy of the array since we'll be modifying it during removal
                 // Skip first drawing (main drawing) and only include inserted drawings
-                const previouslyInserted = [...this.pfodWeb.drawingManager.drawings.slice(1)];
+                const previouslyInserted = [...drawingManager.drawings.slice(1)];
                 previouslyInserted.forEach(insertedDrawingName => {
                         // If the drawing was directly inserted by this drawing (parent relationship),
                         // remove it and all its children
-                        if (this.pfodWeb.drawingManager.drawingsData[insertedDrawingName] && 
-                            this.pfodWeb.drawingManager.drawingsData[insertedDrawingName].parentDrawing === drawingName) {
+                        if (drawingManager.drawingsData[insertedDrawingName] && 
+                            drawingManager.drawingsData[insertedDrawingName].parentDrawing === drawingName) {
                         console.log(`Removing previously inserted drawing ${insertedDrawingName} as part of start command`);
                         this.pfodWeb.removeInsertedDrawing(insertedDrawingName);
                             }
@@ -232,7 +231,7 @@ class DrawingDataProcessor {
             
             
             // Initialize or reset arrays for this drawing
-            this.pfodWeb.drawingManager.clearItems(drawingName);
+            drawingManager.clearItems(drawingName);
             
         // Save the version and data - handle empty/blank/undefined versions
             // If version is undefined, empty or all blanks, set to empty string
@@ -240,17 +239,32 @@ class DrawingDataProcessor {
             console.log(`[VERSION_DEBUG] data.version = "${data.version}", type = ${typeof data.version}`);
             const normalizedVersion = (data.version && data.version.trim()) ? data.version : '';
             console.log(`Saving initial version "${normalizedVersion}" for drawing ${data.name}`);
-            this.pfodWeb.drawingManager.saveToLocalStorage(drawingName);
+            drawingManager.saveToLocalStorage(drawingName);
             
             // Save merged data for the main drawing using new storage system
-            const mainDrawingName = this.pfodWeb.drawingManager.getMainDrawingName();
+            const mainDrawingName = drawingManager.getMainDrawingName();
             if (mainDrawingName) {
-                this.pfodWeb.drawingManager.saveMergedDataToStorage(mainDrawingName);
+                drawingManager.saveMergedDataToStorage(mainDrawingName);
             }
         }
        // If this is an update, apply changes to existing data
         else if (data.pfodDrawing === 'update') {
-            let drawingData = this.pfodWeb.drawingManager.getDrawingData(drawingName);
+            let drawingData;
+
+            if (drawingName === null && requestType === 'touch') {
+                // TouchAction request - update merged/shadow data directly, not individual drawing
+                console.log(`[TOUCH_UPDATE] Getting merged shadow data for touchAction update`);
+                // For shadow drawingManager, create virtual merged drawing data
+                drawingData = {
+                    items: [], // Will be populated from update
+                    x: drawingManager.drawingsData[drawingManager.getMainDrawingName()].data.x,
+                    y: drawingManager.drawingsData[drawingManager.getMainDrawingName()].data.y,
+                    color: drawingManager.drawingsData[drawingManager.getMainDrawingName()].data.color
+                };
+            } else {
+                // Normal drawing request - get individual drawing data
+                drawingData = drawingManager.getDrawingData(drawingName);
+            }
             
             if (!drawingData) {
                 // If we have saved data, try to use it
@@ -264,7 +278,7 @@ class DrawingDataProcessor {
                     console.log(`Restored drawing from localStorage: ${drawingData.name}, size=${drawingData.x}x${drawingData.y}`);
                 
                     // Set the loaded data in the manager
-                    this.pfodWeb.drawingManager.setDrawingData(drawingName, drawingData);
+                    drawingManager.setDrawingData(drawingName, drawingData);
                 } else {                
                     console.error('Received update without initial data');
                     throw new Error('Received update without initial data');
@@ -303,15 +317,22 @@ class DrawingDataProcessor {
                 updatedData.version = originalVer;
             }
             
-            // Update the drawing data in the manager
-            this.pfodWeb.drawingManager.setDrawingData(drawingName, updatedData);
-           // Always save the updated drawing data
-            this.pfodWeb.drawingManager.saveToLocalStorage(drawingName);
-            
-            // Save merged data for the main drawing using new storage system
-            const mainDrawingName = this.pfodWeb.drawingManager.getMainDrawingName();
-            if (mainDrawingName) {
-                this.pfodWeb.drawingManager.saveMergedDataToStorage(mainDrawingName);
+            if (drawingName === null && requestType === 'touch') {
+                // TouchAction request - update merged shadow data directly, don't update individual drawings
+                console.log(`[TOUCH_UPDATE] Updating merged shadow data directly, no individual drawing updates, no merge needed`);
+                // The processed items are already in the drawingManager's merged collections (all* properties)
+                // No need to update individual drawing data or trigger merge - shadow data is already updated
+            } else {
+                // Normal drawing request - update individual drawing data
+                drawingManager.setDrawingData(drawingName, updatedData);
+                // Always save the updated drawing data
+                drawingManager.saveToLocalStorage(drawingName);
+
+                // Save merged data for the main drawing using new storage system
+                const mainDrawingName = drawingManager.getMainDrawingName();
+                if (mainDrawingName) {
+                    drawingManager.saveMergedDataToStorage(mainDrawingName);
+                }
             }
         } 
         else { 
@@ -328,15 +349,37 @@ class DrawingDataProcessor {
         // Initialize local transform stack
         let transformStack = [];
         let currentTransform; //
-        
+
+        // Set up local collection variables based on request type
+        let targetIndexedItems, targetTouchZones, targetTouchActions, targetTouchActionInputs, targetUnindexedItems;
+
+        if (drawingName === null && requestType === 'touch') {
+            // TouchAction request - use merged collections directly
+            console.log(`[TOUCH_UPDATE] Using merged collections for touchAction update`);
+            targetIndexedItems = drawingManager.allIndexedItemsByNumber;
+            targetTouchZones = drawingManager.allTouchZonesByCmd;
+            targetTouchActions = drawingManager.allTouchActionsByCmd;
+            targetTouchActionInputs = drawingManager.allTouchActionInputsByCmd;
+            targetUnindexedItems = drawingManager.allUnindexedItems;
+        } else {
+            // Normal request - use individual drawing collections
+            console.log(`[NORMAL_UPDATE] Using individual drawing collections for drawing: ${drawingName}`);
+            // These will be accessed as targetIndexedItems, targetTouchZones[drawingName], etc.
+            targetIndexedItems = drawingManager.indexedItems[drawingName] || {};
+            targetTouchZones = drawingManager.touchZonesByCmd[drawingName] || {};
+            targetTouchActions = drawingManager.touchActionsByCmd[drawingName] || {};
+            targetTouchActionInputs = drawingManager.touchActionInputsByCmd[drawingName] || {};
+            targetUnindexedItems = drawingManager.unindexedItems[drawingName] || [];
+        }
+
         // Set the initial transform
         if (data.pfodDrawing === 'start') {
             // For 'start' commands, reset to initial state
             currentTransform = { x: 0, y: 0, scale: 1.0 };
             console.log(`[TRANSFORM] Using initial transform (0,0,1.0) for drawing start: ${drawingName}`);
-        } else if (data.pfodDrawing === 'update' && this.pfodWeb.drawingManager.savedTransforms[drawingName]) {
+        } else if (data.pfodDrawing === 'update' && drawingManager.savedTransforms[drawingName]) {
             // For 'update' commands, use the saved transform if available
-            currentTransform = {...this.pfodWeb.drawingManager.savedTransforms[drawingName]};
+            currentTransform = {...drawingManager.savedTransforms[drawingName]};
             console.log(`[TRANSFORM] Using saved transform for update: x=${currentTransform.x}, y=${currentTransform.y}, scale=${currentTransform.scale}`);
         } else {
             // Default fallback
@@ -372,6 +415,7 @@ class DrawingDataProcessor {
                 // Still need to trigger redraw and continue with normal flow
             }
             
+
             itemsToProcess.forEach(item => {
             // Validate and normalize item color to integer (0-255)
             if (item.color !== undefined) {
@@ -589,7 +633,7 @@ class DrawingDataProcessor {
                     skipProcessing = true; // Flag to skip adding this item to collections
                 } else {
                     const idx = item.idx;
-                    const indexedItems = this.pfodWeb.drawingManager.getIndexedItems(drawingName);
+                    const indexedItems = drawingManager.getIndexedItems(drawingName);
                     if (indexedItems[idx]) {
                       console.log(`Processing index item with idx=${item.idx} - already have item with that idx so skip processing this`);
                       skipProcessing = true; // Flag to skip adding this item to collections
@@ -603,8 +647,8 @@ class DrawingDataProcessor {
                     const cmd = item.cmd || '';
                     if (cmd.trim().length > 0) {
                         // Check if there's already a touchZone with this cmd
-                        const existingTouchZone = this.pfodWeb.drawingManager.touchZonesByCmd[drawingName] && 
-                                                this.pfodWeb.drawingManager.touchZonesByCmd[drawingName][cmd];
+                        const existingTouchZone = drawingManager.touchZonesByCmd[drawingName] && 
+                                                drawingManager.touchZonesByCmd[drawingName][cmd];
                         if (existingTouchZone) {
                             console.log(`Processing index item with cmdName="${item.cmdName}" cmd="${cmd}" - already exists, skipping`);
                             skipProcessing = true;
@@ -624,21 +668,21 @@ class DrawingDataProcessor {
                     if (item.idx) {
                         // Erase by index
                         const idx = item.idx;
-                        const indexedItems = this.pfodWeb.drawingManager.getIndexedItems(drawingName);
+                        const indexedItems = drawingManager.getIndexedItems(drawingName);
                         
                         if (indexedItems[idx]) {
-                            delete this.pfodWeb.drawingManager.indexedItems[drawingName][idx];
+                            delete drawingManager.indexedItems[drawingName][idx];
                             console.log(`Erased item with index ${idx}`);
                         } else {
                             console.warn(`Erase operation: No item found with idx=${idx} to erase`);
                         }
                     } else if (item.cmd) {
                         if (item.drawingName !== undefined) {
-                         this.pfodWeb.drawingManager.eraseByCmd(drawingName, item.cmd, item.drawingName);
+                         drawingManager.eraseByCmd(drawingName, item.cmd, item.drawingName);
                          console.log(`Erased insertDwg and actions with cmd="${item.cmd}"`);
                        } else {
                         // Erase by cmd - removes touchZone and all associated actions
-                        this.pfodWeb.drawingManager.eraseByCmd(drawingName, item.cmd);
+                        drawingManager.eraseByCmd(drawingName, item.cmd);
                         console.log(`Erased touchZone and actions with cmd="${item.cmd}"`);
                        }
                     }
@@ -649,7 +693,7 @@ class DrawingDataProcessor {
                     if (item.idx) {
                         // Hide/unhide by index - affects indexed items only (ignore touchZones)
                         const idx = item.idx;
-                        const indexedItems = this.pfodWeb.drawingManager.getIndexedItems(drawingName);
+                        const indexedItems = drawingManager.getIndexedItems(drawingName);
                         const targetItem = indexedItems[idx];
                         
                         if (targetItem) {
@@ -663,18 +707,18 @@ class DrawingDataProcessor {
                         // Hide/unhide by cmd - affects touchZones and insertDwg items only
                         if (item.type === 'hide') {
                             if (item.drawingName !== undefined) {
-                            this.pfodWeb.drawingManager.hideByCmd(drawingName, item.cmd,item.drawingName);
+                            drawingManager.hideByCmd(drawingName, item.cmd,item.drawingName);
                             console.log(`Hidden touchZone and insertDwg items with cmd="${item.cmd}"`);
                             } else {
-                            this.pfodWeb.drawingManager.hideByCmd(drawingName, item.cmd);
+                            drawingManager.hideByCmd(drawingName, item.cmd);
                             console.log(`Hidden touchZone and insertDwg items with cmd="${item.cmd}"`);
                             }
                         } else if (item.type === 'unhide') {
                             if (item.drawingName !== undefined) {
-                            this.pfodWeb.drawingManager.unhideByCmd(drawingName, item.cmd,item.drawingName);
+                            drawingManager.unhideByCmd(drawingName, item.cmd,item.drawingName);
                             console.log(`Unhidden touchZone and insertDwg items with cmd="${item.cmd}"`);
                             } else {
-                            this.pfodWeb.drawingManager.unhideByCmd(drawingName, item.cmd);
+                            drawingManager.unhideByCmd(drawingName, item.cmd);
                             console.log(`Unhidden touchZone and insertDwg items with cmd="${item.cmd}"`);
                             }
                         }
@@ -690,10 +734,10 @@ class DrawingDataProcessor {
               // SPECIAL CASE: For insertDwg items, we ALWAYS use the current drawing name, not the drawingName specified in the item
               // This is because the insertDwg item needs to be stored in the current drawing's unindexed items list
               // to be properly processed by the handleInsertDwg function
-              const mainDrawingName = this.pfodWeb.drawingManager.drawings.length > 0 ? this.pfodWeb.drawingManager.drawings[0] : '';
+              const mainDrawingName = drawingManager.drawings.length > 0 ? drawingManager.drawings[0] : '';
               const itemDrawingName = data.name; // (item.type === 'insertDwg' || item.type.toLowerCase() === 'insertdwg') ? data.name : (item.drawingName || data.name);
               item.parentDrawingName = itemDrawingName;
-              this.pfodWeb.drawingManager.ensureItemCollections(itemDrawingName);                       
+              drawingManager.ensureItemCollections(itemDrawingName);                       
 
               // Special handling for insertDwg items
               if (item.type === 'insertDwg') { // || (item.type && item.type.toLowerCase() === 'insertdwg')) {
@@ -702,14 +746,14 @@ class DrawingDataProcessor {
                     const currentDrawing = data.name;
                     
                     // Ensure the collections exist for the current drawing
-                    this.pfodWeb.drawingManager.ensureItemCollections(currentDrawing);
+                    drawingManager.ensureItemCollections(currentDrawing);
                     
                     // Normalize type to camelCase for consistency
                     item.type = 'insertDwg';                    
                                         
                     // Add to the current drawing's unindexed items
                     try {
-                        this.pfodWeb.drawingManager.unindexedItems[currentDrawing].push(item);
+                        targetUnindexedItems.push(item);
                         console.log(`Added insertDwg item for "${item.drawingName}" with transform (${item.transform.x},${item.transform.y},${item.transform.scale}) to drawing=${currentDrawing}, visible=${item.visible}`);
                     } catch (error) {
                         console.error(`Error adding insertDwg item to unindexed items for ${currentDrawing}:`, error);
@@ -721,7 +765,7 @@ class DrawingDataProcessor {
                     if (item.type === 'touchZone') {
                         // Check if there's an associated touchActionInput for this cmd
                         if (item.cmd && item.cmd.trim().length > 0) {
-                            const existingTouchActionInput = this.pfodWeb.drawingManager.getTouchActionInput(itemDrawingName, item.cmd);
+                            const existingTouchActionInput = targetTouchActionInputs[item.cmd];
                             if (existingTouchActionInput) {
                                 // If touchActionInput exists, filter can only be TOUCH or TOUCH_DISABLED
                                 if (item.filter !== TouchZoneFilters.TOUCH && item.filter !== TouchZoneFilters.TOUCH_DISABLED) {
@@ -732,28 +776,31 @@ class DrawingDataProcessor {
                         }
                     }
                     
-                    // Add the touchZone using the manager
-                    this.pfodWeb.drawingManager.addTouchZone(itemDrawingName, item);                    
+                    // Add the touchZone to the target collection
+                    targetTouchZones[item.cmd] = item;
                     console.log(`Added touchZone: cmd=${item.cmd}, filter=${item.filter}, idx=${item.idx || 0}, drawing=${itemDrawingName}`);
                    // this.drawingManager.unindexedItems[itemDrawingName].push(item);
                    // console.log(`Added unindexed item: type=${item.type}, drawing=${itemDrawingName}, visible=${item.visible !== false}`);
                     
               // Check if this is a touchAction
               } else if (item.type === 'touchAction') {
-                    // Add the touchAction using the manager
-                    const success = this.pfodWeb.drawingManager.addTouchAction(itemDrawingName, item);
-                    if (success) {
-                        console.log(`Added touchAction: cmd=${item.cmd}, actions=${(item.action || []).length}, drawing=${itemDrawingName}`);
+                    // Add the touchAction to the target collection
+                    // Initialize actions array if it doesn't exist for this cmd
+                    if (!targetTouchActions[item.cmd]) {
+                        targetTouchActions[item.cmd] = [];
                     }
+                    // Append the action items to existing actions array instead of replacing
+                    if (item.action && Array.isArray(item.action)) {
+                        targetTouchActions[item.cmd].push(...item.action);
+                    }
+                    console.log(`Added touchAction: cmd=${item.cmd}, actions=${(item.action || []).length}, drawing=${itemDrawingName}`);
                     // touchActions are not added to unindexed/indexed items - they're stored separately
                     
               // Check if this is a touchActionInput
               } else if (item.type === 'touchActionInput') {
-                    // Add the touchActionInput using the manager
-                    const success = this.pfodWeb.drawingManager.addTouchActionInput(itemDrawingName, item);
-                    if (success) {
-                        console.log(`Added touchActionInput: cmd=${item.cmd}, prompt="${item.prompt}", textIdx=${item.textIdx}, drawing=${itemDrawingName}`);
-                    }
+                    // Add the touchActionInput to the target collection
+                    targetTouchActionInputs[item.cmd] = item;
+                    console.log(`Added touchActionInput: cmd=${item.cmd}, prompt="${item.prompt}", textIdx=${item.textIdx}, drawing=${itemDrawingName}`);
                     // touchActionInputs are not added to unindexed/indexed items - they're stored separately
                     
               // Normal processing for other items
@@ -761,17 +808,16 @@ class DrawingDataProcessor {
                   // For non-touchZone items, handle as regular indexed items
                   const idx = item.idx;                        
                   // Get the current indexed items for this drawing
-                  const currentIndexedItems = this.pfodWeb.drawingManager.getIndexedItems(itemDrawingName);
-                  const isUpdate = currentIndexedItems[idx] !== undefined;                                                
-                  // Add the item to the drawing's indexed items using the manager
+                  const isUpdate = targetIndexedItems[idx] !== undefined;
+                  // Add the item to the target indexed items collection
                   if (isUpdate) {
-                   item.transform = currentIndexedItems[idx].transform;// || { x: 0, y: 0, scale: 1 };
-                   item.clipRegion = currentIndexedItems[idx].clipRegion;// || { x: 0, y: 0, width: 100, height: 20 };
+                   item.transform = targetIndexedItems[idx].transform;// || { x: 0, y: 0, scale: 1 };
+                   item.clipRegion = targetIndexedItems[idx].clipRegion;// || { x: 0, y: 0, width: 100, height: 20 };
                    // Preserve visibility state from existing item
-                   item.visible = currentIndexedItems[idx].visible;
+                   item.visible = targetIndexedItems[idx].visible;
                   }
 
-                  this.pfodWeb.drawingManager.indexedItems[itemDrawingName][idx] = item;
+                  targetIndexedItems[idx] = item;
                         
                   console.log(`${isUpdate ? 'Updated' : 'Added'} indexed item: type=${item.type}, drawing=${itemDrawingName}, idx=${idx}, visible=${item.visible !== false}`);
               } else {
@@ -780,8 +826,8 @@ class DrawingDataProcessor {
                   // Ensure the collections exist for the drawing before adding the item
                   // This is especially important for insertDwg items which refer to other drawings
                   try {
-                      // Add to unindexed items using the manager
-                      this.pfodWeb.drawingManager.unindexedItems[itemDrawingName].push(item);
+                      // Add to target unindexed items collection
+                      targetUnindexedItems.push(item);
                       console.log(`Added unindexed item: type=${item.type}, drawing=${itemDrawingName}, visible=${item.visible !== false}`);
                   } catch (error) {
                       console.error(`Error adding unindexed item to ${itemDrawingName}:`, error);
@@ -792,45 +838,44 @@ class DrawingDataProcessor {
             } // if (!skipProcessing)
         });
         // Log summary of items
-        const dwgUnindexedItems = this.pfodWeb.drawingManager.getUnindexedItems(data.name);
-        const dwgIndexedItems = this.pfodWeb.drawingManager.getIndexedItems(data.name);
-        const dwgTouchZones = this.pfodWeb.drawingManager.getTouchZonesByCmd(data.name);
-        console.log(`Drawing ${data.name} now has ${dwgUnindexedItems.length} unindexed items, ${Object.keys(dwgIndexedItems).length} indexed items,  ${Object.keys(dwgTouchZones).length} touchZones`);
-        if (dwgUnindexedItems.length > 0) {
-            console.log('Unindexed item types:', dwgUnindexedItems.map(i => i.type).join(', '));
+        console.log(`Drawing ${data.name} now has ${targetUnindexedItems.length} unindexed items, ${Object.keys(targetIndexedItems).length} indexed items,  ${Object.keys(targetTouchZones).length} touchZones`);
+        if (targetUnindexedItems.length > 0) {
+            console.log('Unindexed item types:', targetUnindexedItems.map(i => i.type).join(', '));
         }
-        if (Object.keys(dwgIndexedItems).length > 0) {
-            console.log('Indexed item types:', Object.values(dwgIndexedItems).map(i => i.type).join(', '));
+        if (Object.keys(targetIndexedItems).length > 0) {
+            console.log('Indexed item types:', Object.values(targetIndexedItems).map(i => i.type).join(', '));
         }
     } // if (data.items && Array.isArray(data.items))
 
-    console.log(`Set response status to TRUE for "${drawingName}"`);
-    this.pfodWeb.drawingManager.drawingResponseStatus[drawingName] = true;
+    if (drawingName !== null) {
+        console.log(`Set response status to TRUE for "${drawingName}"`);
+        drawingManager.drawingResponseStatus[drawingName] = true;
+    } else {
+        console.log(`Skipping response status update for touchAction request (null drawingName)`);
+    }
         
     // Check for insertDwg items and add them to the request queue
-    const dwgUnindexedItems = this.pfodWeb.drawingManager.getUnindexedItems(data.name);
-    console.log(`Scanning for insertDwg items in ${dwgUnindexedItems.length} unindexed items of drawing ${data.name}`);    
+    console.log(`Scanning for insertDwg items in ${targetUnindexedItems.length} unindexed items of drawing ${data.name}`);
     // Debug: full dump of unindexed items array for this drawing
-    console.log(`[DEBUG] Raw unindexed items array for ${data.name}:`, JSON.stringify(dwgUnindexedItems));    
-    // Find insertDwg items in unindexed items 
-    const insertDwgItems = dwgUnindexedItems.filter(item => 
+    console.log(`[DEBUG] Raw unindexed items array for ${data.name}:`, JSON.stringify(targetUnindexedItems));
+    // Find insertDwg items in unindexed items
+    const insertDwgItems = targetUnindexedItems.filter(item =>
         item.type && (
-            //item.type.toLowerCase() === 'insertdwg' || 
+            //item.type.toLowerCase() === 'insertdwg' ||
             item.type === 'insertDwg'
         ));
 
         // Debugging detailed info about each unindexed item
     console.log(`[DEBUG] Detailed unindexed items for drawing ${data.name}:`);
-    dwgUnindexedItems.forEach((item, index) => {
+    targetUnindexedItems.forEach((item, index) => {
         console.log(`- Item ${index}: type=${item.type}, drawingName=${item.drawingName || 'none'}, would match insertDwg filter: ${(item.type === 'insertDwg' || (item.type && item.type.toLowerCase() === 'insertdwg'))}`);
         // Print full item for better debugging
         console.log(`  Full item ${index}:`, JSON.stringify(item));
     });
 
-    const dwgIndexedItems = this.pfodWeb.drawingManager.getIndexedItems(data.name);
-    const indices = Object.keys(dwgIndexedItems);
+    const indices = Object.keys(targetIndexedItems);
     indices.forEach(idx => {
-        const itemWithIndex = dwgIndexedItems[idx];
+        const itemWithIndex = targetIndexedItems[idx];
         const drawingSource = itemWithIndex.parentDrawingName || 'unknown';
         console.log(`[PROCESS_DATA] Drawing indexed item ${idx} of type ${itemWithIndex.type} from ${drawingSource}`);
         if (itemWithIndex.transform) {
@@ -860,11 +905,14 @@ class DrawingDataProcessor {
         
     // Save the current transform for this drawing at the end of processing
     // This will be used as the starting transform for updates
-        this.pfodWeb.drawingManager.saveTransform(drawingName, currentTransform);
+    if (drawingName !== null) {
+        drawingManager.saveTransform(drawingName, currentTransform);
         console.log(`[TRANSFORM] Saved transform for drawing "${data.name}": x=${currentTransform.x}, y=${currentTransform.y}, scale=${currentTransform.scale}`);
+    } else {
+        console.log(`[TRANSFORM] TouchAction request - no transform save needed for merged data update`);
+    }
         
-    // Update the MergeAndRedraw module with the latest state
-        this.pfodWeb.mergeAndRedraw.updateState(this.pfodWeb.drawingManager.getMergeAndRedrawState());
+        // DrawingDataProcessor works on shadow data - redraw update handled by updateFromShadow()
         
         // If we found insertDwg items, we'll let the queue process them and do the redraw
         // when all items are processed. Otherwise, redraw immediately.
@@ -877,7 +925,7 @@ class DrawingDataProcessor {
         } else {
             // Queue is empty, not processing, and no sent request - redraw now
             console.log(`[REDRAW_DECISION] Queue empty, not processing, no sent request after ${drawingName}, redrawing immediately`);
-            this.pfodWeb.drawingManager.allDrawingsReceived = true; // this is not actually used!!
+            drawingManager.allDrawingsReceived = true; // this is not actually used!!
   //          this.pfodWeb.resizeCanvas();
         }
         

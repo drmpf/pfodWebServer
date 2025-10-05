@@ -50,7 +50,7 @@ async function loadDependencies_noDebug() {
     './DrawingManager.js',
     './displayTextUtils.js',
     './redraw.js',
-    './mergeAndRedraw.js',
+    './drawingMerger.js',
     './webTranslator.js',
     './drawingDataProcessor.js',
     './pfodWebMouse.js'

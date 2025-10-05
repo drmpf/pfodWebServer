@@ -10,15 +10,24 @@
 // DrawingManager.js - Centralized manager for all drawing data
 // Replaces the global drawingData variable with a class that manages data for each drawing
 
+
+
 class DrawingManager {
     constructor() {
+        // Flag to track if this DrawingManager instance is actively in use
+        this.inUse = false;
+
         // Store for drawing items
         this.touchZonesByCmd = {}; // Format: {drawingName: {cmd: item}}
         this.touchActionsByCmd = {}; // Format: {drawingName: {cmd: actionArray}}
         this.touchActionInputsByCmd = {}; // Format: {drawingName: {cmd: {prompt, textIdx}}}
         this.allTouchZonesByCmd = {}; // // Format: {cmd: item}
+        this.allTouchActionsByCmd = {};
+        this.allTouchActionInputsByCmd = {};
         this.unindexedItems = {}; // Format: {drawingName: [items]}
         this.indexedItems = {}; // Format: {drawingName: {idx: item}}
+        this.allUnindexedItems = [];
+        this.allIndexedItemsByNumber = {};
         
         // Track all drawings including main and inserted ones
         this.drawings = []; // Array of drawing names in order, with main drawing first
@@ -674,6 +683,10 @@ class DrawingManager {
     getMainDrawingName() {
          const mainDrawingName = this.drawings.length > 0 ? this.drawings[0] : '';
          return mainDrawingName;
+    }
+
+    getCurrentDrawingName() {
+         return this.getMainDrawingName();
     }
 
     // Create a structured response for sharing state with other modules
